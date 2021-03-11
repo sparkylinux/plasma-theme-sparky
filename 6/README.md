@@ -21,7 +21,7 @@ Files:
 	/usr/share/plasma/look-and-feel/org.sparky.desktop/contents/loginmanager/*.jpg
 	DEBIAN/*
        /usr/share/wallpapers/Sparky/metadata.desktop
-Copyright: 2019 pavroo <pavroo@onet.eu>
+Copyright: 2019-2021 pavroo <pavroo@onet.eu>
 License: GPL-3
 
 This program is free software: you can redistribute it and/or modify
