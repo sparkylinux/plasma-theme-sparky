@@ -1,25 +1,10 @@
-/********************************************************************
- KWin - the KDE window manager
- This file is part of the KDE project.
+/*
+    SPDX-FileCopyrightText: 2012 Martin Gräßlin <mgraesslin@kde.org>
 
-Copyright (C) 2012 Martin Gräßlin <mgraesslin@kde.org>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*********************************************************************/
+    SPDX-License-Identifier: GPL-2.0-or-later
+*/
 import QtQuick 2.0
 import org.kde.plasma.core 2.0 as PlasmaCore
-import org.kde.kquickcontrolsaddons 2.0
 import org.kde.kwin 2.0 as KWin
 
 KWin.Switcher {
@@ -60,9 +45,9 @@ KWin.Switcher {
                     id: delegateItem
                     width: listView.width
                     height: listView.rowHeight
-                    QIconItem {
+                    PlasmaCore.IconItem {
                         id: iconElement
-                        icon: "user-desktop"
+                        source: "user-desktop"
                         width: 32
                         height: 32
                         anchors {
@@ -77,7 +62,7 @@ KWin.Switcher {
                         horizontalAlignment: Text.AlignHCenter
                         text: display
                         font.bold: true
-                        color: theme.textColor
+                        color: PlasmaCore.Theme.textColor
                         elide: Text.ElideMiddle
                         anchors {
                             left: iconElement.right
@@ -149,17 +134,18 @@ KWin.Switcher {
                     prefix: "hover"
                     width: listView.width
                 }
-                highlightMoveDuration: 250
+                highlightMoveDuration: PlasmaCore.Units.longDuration
                 boundsBehavior: Flickable.StopAtBounds
                 Connections {
                     target: tabBox
-                    onCurrentIndexChanged: {listView.currentIndex = tabBox.currentIndex;}
+                    function onCurrentIndexChanged() {listView.currentIndex = tabBox.currentIndex;}
                 }
             }
             Component {
                 id: clientIconDelegate
-                QIconItem {
-                    icon: model.icon
+                PlasmaCore.IconItem {
+                    source: model.icon
+                    usesPlasmaTheme: false
                     width: 16
                     height: 16
                 }

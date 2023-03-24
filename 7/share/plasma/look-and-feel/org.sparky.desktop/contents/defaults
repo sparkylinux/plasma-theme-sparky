@@ -8,7 +8,10 @@ ColorScheme=Sparky
 Theme=Tela
 
 [plasmarc][Theme]
-name=sparky
+name=default
+
+[Wallpaper]
+Image=Sparky
 
 [kcminputrc][Mouse]
 cursorTheme=breeze_cursors
@@ -18,3 +21,9 @@ LayoutName=org.sparky.desktop
 
 [kwinrc][DesktopSwitcher]
 LayoutName=org.sparky.desktop
+
+[kwinrc][org.kde.kdecoration2]
+library=org.sparky.breeze
+
+[KSplash]
+Theme=org.sparky.Breeze

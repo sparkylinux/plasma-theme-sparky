@@ -1,128 +1,178 @@
 /*
- *   Copyright 2014 David Edmundson <davidedmundson@kde.org>
- *   Copyright 2014 Aleix Pol Gonzalez <aleixpol@blue-systems.com>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU Library General Public License as
- *   published by the Free Software Foundation; either version 2 or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details
- *
- *   You should have received a copy of the GNU Library General Public
- *   License along with this program; if not, write to the
- *   Free Software Foundation, Inc.,
- *   51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- */
+    SPDX-FileCopyrightText: 2014 David Edmundson <davidedmundson@kde.org>
+    SPDX-FileCopyrightText: 2014 Aleix Pol Gonzalez <aleixpol@blue-systems.com>
 
-import QtQuick 2.2
+    SPDX-License-Identifier: LGPL-2.0-or-later
+*/
+
+import QtQuick 2.15
+import QtQuick.Window 2.15
 
 import org.kde.plasma.core 2.0 as PlasmaCore
-import org.kde.plasma.components 2.0 as PlasmaComponents
+import org.kde.plasma.components 3.0 as PlasmaComponents3
 
 Item {
     id: wrapper
 
-    property bool isCurrent: ListView.isCurrentItem
+    // If we're using software rendering, draw outlines instead of shadows
+    // See https://bugs.kde.org/show_bug.cgi?id=398317
+    readonly property bool softwareRendering: GraphicsInfo.api === GraphicsInfo.Software
+
+    property bool isCurrent: true
 
     property string name
     property string userName
+    property string avatarPath
     property string iconSource
-    property int faceSize: frame.width
-
+    property bool needsPassword
+    property var vtNumber
+    property bool constrainText: true
+    property alias nameFontSize: usernameDelegate.font.pointSize
+    property int fontSize: PlasmaCore.Theme.defaultFont.pointSize + 2
     signal clicked()
 
-    height: faceSize + loginText.implicitHeight
+    property real faceSize: PlasmaCore.Units.gridUnit * 7
 
-    opacity: isCurrent ? 1.0 : 0.618
+    opacity: isCurrent ? 1.0 : 0.5
 
     Behavior on opacity {
-        NumberAnimation { duration: 250 }
+        OpacityAnimator {
+            duration: PlasmaCore.Units.longDuration
+        }
+    }
+
+    // Draw a translucent background circle under the user picture
+    Rectangle {
+        anchors.centerIn: imageSource
+        width: imageSource.width - 2 // Subtract to prevent fringing
+        height: width
+        radius: width / 2
+
+        color: PlasmaCore.ColorScope.backgroundColor
+        opacity: 0.6
     }
 
     Item {
-        id: imageWrapper
-        anchors {
-            top: parent.top
-            left: parent.left
-            right: parent.right
-        }
+        id: imageSource
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
 
-        height: parent.height - loginText.height
-
-        //TODO there code was to show a blue border on mouseover
-        //which shows that something is interactable.
-        //we can't have that whilst using widgets/background as the base
-        //I'd quite like it back
-
-        PlasmaCore.FrameSvgItem {
-            id: frame
-            imagePath: "widgets/background"
-
-            //width is set in alias at top
-            width: Math.round(faceSize * (isCurrent ? 1.0 : 0.8))
-            height: width
-
-            Behavior on width {
-                NumberAnimation {
-                    duration: 100
-                }
-            }
-            anchors {
-                centerIn: parent
+        Behavior on width {
+            PropertyAnimation {
+                from: faceSize
+                duration: PlasmaCore.Units.longDuration;
             }
         }
+        width: isCurrent ? faceSize : faceSize - PlasmaCore.Units.largeSpacing
+        height: width
 
-        //we sometimes have a path to an image sometimes an icon
-        //IconItem in it's infinite wisdom tries to load a full path as an icon which is rubbish
-        //we try loading it as a normal image, if that fails we fall back to IconItem
+        //Image takes priority, taking a full path to a file, if that doesn't exist we show an icon
         Image {
             id: face
-            source: wrapper.iconSource
-            anchors {
-                fill: frame
-                //negative to make frame around the image
-                topMargin: frame.margins.top
-                leftMargin: frame.margins.left
-                rightMargin: frame.margins.right
-                bottomMargin: frame.margins.bottom
-            }
+            source: wrapper.avatarPath
+            sourceSize: Qt.size(faceSize * Screen.devicePixelRatio, faceSize * Screen.devicePixelRatio)
+            fillMode: Image.PreserveAspectCrop
+            anchors.fill: parent
         }
 
         PlasmaCore.IconItem {
             id: faceIcon
-            source: wrapper.iconSource
-            visible: face.status == Image.Error
-            anchors.fill: face
+            source: iconSource
+            visible: (face.status == Image.Error || face.status == Image.Null)
+            anchors.fill: parent
+            colorGroup: PlasmaCore.ColorScope.colorGroup
         }
     }
 
-    BreezeLabel {
-        id: loginText
-        anchors {
-            bottom: parent.bottom
-            left: parent.left
-            right: parent.right
+    ShaderEffect {
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        width: imageSource.width
+        height: imageSource.height
+
+        supportsAtlasTextures: true
+
+        readonly property Item source: ShaderEffectSource {
+            sourceItem: imageSource
+            // software rendering is just a fallback so we can accept not having a rounded avatar here
+            hideSource: wrapper.GraphicsInfo.api !== GraphicsInfo.Software
+            live: true // otherwise the user in focus will show a blurred avatar
         }
+
+        readonly property color colorBorder: PlasmaCore.ColorScope.textColor
+
+        //draw a circle with an antialiased border
+        //innerRadius = size of the inner circle with contents
+        //outerRadius = size of the border
+        //blend = area to blend between two colours
+        //all sizes are normalised so 0.5 == half the width of the texture
+
+        //if copying into another project don't forget to connect themeChanged to update()
+        //but in SDDM that's a bit pointless
+        fragmentShader: `
+            varying highp vec2 qt_TexCoord0;
+            uniform highp float qt_Opacity;
+            uniform lowp sampler2D source;
+            uniform lowp vec4 colorBorder;
+
+            const highp float blend = 0.01;
+            const highp float innerRadius = 0.47;
+            const highp float outerRadius = 0.49;
+            const lowp vec4 colorEmpty = vec4(0.0, 0.0, 0.0, 0.0);
+
+            void main() {
+                lowp vec4 colorSource = texture2D(source, qt_TexCoord0.st);
+
+                highp vec2 m = qt_TexCoord0 - vec2(0.5, 0.5);
+                highp float dist = sqrt(m.x * m.x + m.y * m.y);
+
+                if (dist < innerRadius)
+                    gl_FragColor = colorSource;
+                else if (dist < innerRadius + blend)
+                    gl_FragColor = mix(colorSource, colorBorder, ((dist - innerRadius) / blend));
+                else if (dist < outerRadius)
+                    gl_FragColor = colorBorder;
+                else if (dist < outerRadius + blend)
+                    gl_FragColor = mix(colorBorder, colorEmpty, ((dist - outerRadius) / blend));
+                else
+                    gl_FragColor = colorEmpty;
+
+                gl_FragColor = gl_FragColor * qt_Opacity;
+            }
+        `
+    }
+
+    PlasmaComponents3.Label {
+        id: usernameDelegate
+
+        anchors.top: imageSource.bottom
+        anchors.topMargin: PlasmaCore.Units.gridUnit
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        // Make it bigger than other fonts to match the scale of the avatar better
+        font.pointSize: wrapper.fontSize + 4
+
+        width: constrainText ? parent.width : implicitWidth
         text: wrapper.name
+        style: softwareRendering ? Text.Outline : Text.Normal
+        styleColor: softwareRendering ? PlasmaCore.ColorScope.backgroundColor : "transparent" //no outline, doesn't matter
+        wrapMode: Text.WordWrap
+        maximumLineCount: wrapper.constrainText ? 3 : 1
         elide: Text.ElideRight
         horizontalAlignment: Text.AlignHCenter
-        maximumLineCount: 2
-        wrapMode: Text.Wrap
-        //make an indication that this has active focus, this only happens when reached with text navigation
+        //make an indication that this has active focus, this only happens when reached with keyboard navigation
         font.underline: wrapper.activeFocus
-        height: Math.round(Math.max(paintedHeight, theme.mSize(theme.defaultFont).height*1.2))
     }
 
     MouseArea {
         anchors.fill: parent
         hoverEnabled: true
 
-        onClicked: wrapper.clicked();
+        onClicked: wrapper.clicked()
     }
+
+    Keys.onSpacePressed: wrapper.clicked()
 
     Accessible.name: name
     Accessible.role: Accessible.Button

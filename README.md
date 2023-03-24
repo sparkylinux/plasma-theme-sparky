@@ -1,7 +1,7 @@
 Sparky Plasma Theme
 SparkyLinux Plasma theme based on Breeze.
 
-Copyright: 2017 pavroo <pavroo@onet.eu>
+Copyright: 2017-2023 pavroo <pavroo@onet.eu>
 License: CC ZERO 4.0 PL
 
 This program is free software: you can redistribute it and/or modify

@@ -1,223 +1,91 @@
 /*
- *  Copyright 2013 Marco Martin <mart@kde.org>
- *  Copyright 2014 Sebastian Kügler <sebas@kde.org>
- *  Copyright 2014 Kai Uwe Broulik <kde@privat.broulik.de>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  2.010-1301, USA.
- */
+    SPDX-FileCopyrightText: 2013 Marco Martin <mart@kde.org>
+    SPDX-FileCopyrightText: 2014 Sebastian Kügler <sebas@kde.org>
+    SPDX-FileCopyrightText: 2014 Kai Uwe Broulik <kde@privat.broulik.de>
 
-import QtQuick 2.2
+    SPDX-License-Identifier: GPL-2.0-or-later
+*/
+
+import QtQuick 2.5
+import QtQuick.Window 2.2
 import org.kde.plasma.wallpapers.image 2.0 as Wallpaper
-import org.kde.plasma.core 2.0 as PlasmaCore
 
-Item {
+ImageStackView {
     id: root
 
-    readonly property string configuredImage: wallpaper.configuration.Image
-    readonly property string modelImage: imageWallpaper.wallpaperPath
-    property Item currentImage: imageB
-    property Item otherImage: imageA
-    readonly property int fillMode: wallpaper.configuration.FillMode
-    property bool ready: false
+    fillMode: wallpaper.configuration.FillMode
+    configColor: wallpaper.configuration.Color
+    blur: wallpaper.configuration.Blur
+    source: {
+        if (wallpaper.pluginName === "org.kde.slideshow") {
+            return imageWallpaper.image;
+        }
+        if (wallpaper.configuration.PreviewImage !== "null") {
+            return wallpaper.configuration.PreviewImage;
+        }
+        return wallpaper.configuration.Image;
+    }
+    sourceSize: Qt.size(root.width * Screen.devicePixelRatio, root.height * Screen.devicePixelRatio)
+    wallpaperInterface: wallpaper
 
-    //public API, the C++ part will look for those
+    // Public API functions accessible from C++:
+    // e.g. used by WallpaperInterface for drag and drop
     function setUrl(url) {
-        wallpaper.configuration.Image = url
-        imageWallpaper.addUsersWallpaper(url);
+        if (wallpaper.pluginName === "org.sparky.image") {
+            const result = imageWallpaper.addUsersWallpaper(url);
+
+            if (result.length > 0) {
+                // Can be a file or a folder (KPackage)
+                wallpaper.configuration.Image = result;
+            }
+        } else {
+            imageWallpaper.addSlidePath(url);
+            // Save drag and drop result
+            wallpaper.configuration.SlidePaths = imageWallpaper.slidePaths;
+        }
     }
 
+    // e.g. used by slideshow wallpaper plugin
     function action_next() {
         imageWallpaper.nextSlide();
     }
 
+    // e.g. used by slideshow wallpaper plugin
     function action_open() {
-        Qt.openUrlExternally(currentImage.source)
+        mediaProxy.openModelImage();
     }
 
     //private
-    function fadeWallpaper() {
-        if (!ready && width > 0 && height > 0) { // shell startup, setup immediately
-            currentImage.sourceSize = Qt.size(root.width, root.height)
-            currentImage.source = modelImage
-
-            ready = true
-            return
-        }
-
-        fadeAnim.running = false
-        swapImages()
-        currentImage.source = modelImage
-        currentImage.sourceSize = Qt.size(root.width, root.height)
-        // Prevent source size change when image has just been setup anyway
-        sourceSizeTimer.stop()
-        currentImage.opacity = 0
-        otherImage.z = 0
-        currentImage.z = 1
-        // Alleviate stuttering by waiting with the fade animation until the image is loaded (or failed to)
-        fadeAnim.running = Qt.binding(function() {
-            return currentImage.status !== Image.Loading && otherImage.status !== Image.Loading
-        })
-    }
-
-    function fadeFillMode() {
-        fadeAnim.running = false
-        swapImages()
-        currentImage.sourceSize = otherImage.sourceSize
-        sourceSizeTimer.stop()
-        currentImage.source = modelImage
-        currentImage.opacity = 0
-        otherImage.z = 0
-        currentImage.fillMode = fillMode
-        currentImage.z = 1
-        fadeAnim.running = Qt.binding(function() {
-            return currentImage.status !== Image.Loading && otherImage.status !== Image.Loading
-        })
-    }
-
-    function fadeSourceSize() {
-        if (currentImage.sourceSize === Qt.size(root.width, root.height)) {
-            return
-        }
-
-        fadeAnim.running = false
-        swapImages()
-        currentImage.sourceSize = Qt.size(root.width, root.height)
-        currentImage.opacity = 0
-        currentImage.source = otherImage.source
-        otherImage.z = 0
-        currentImage.z = 1
-        fadeAnim.running = Qt.binding(function() {
-            return currentImage.status !== Image.Loading && otherImage.status !== Image.Loading
-        })
-    }
-
-    function startFadeSourceTimer() {
-        if (width > 0 && height > 0 && (imageA.status !== Image.Null || imageB.status !== Image.Null)) {
-            sourceSizeTimer.restart()
-        }
-    }
-
-    function swapImages() {
-        if (currentImage == imageA) {
-            currentImage = imageB
-            otherImage = imageA
-        } else {
-            currentImage = imageA
-            otherImage = imageB
-        }
-    }
-
-    Binding {
-        target: wallpaper.configuration
-        property: "width"
-        value: root.width
-    }
-    Binding {
-        target: wallpaper.configuration
-        property: "height"
-        value: root.height
-    }
-
-    onWidthChanged: startFadeSourceTimer()
-    onHeightChanged: startFadeSourceTimer()
-
-    Timer {
-        id: sourceSizeTimer
-        interval: 1000 // always delay reloading the image even when animations are turned off
-        onTriggered: fadeSourceSize()
-    }
 
     Component.onCompleted: {
-        if (wallpaper.pluginName == "org.kde.slideshow") {
-            wallpaper.setAction("open", i18nd("plasma_applet_org.kde.image", "Open Wallpaper Image"), "document-open");
-            wallpaper.setAction("next", i18nd("plasma_applet_org.kde.image","Next Wallpaper Image"),"user-desktop");
+        // In case plasmashell crashes when the config dialog is opened
+        wallpaper.configuration.PreviewImage = "null";
+        wallpaper.loading = true; // delays ksplash until the wallpaper has been loaded
+
+        if (wallpaper.pluginName === "org.kde.slideshow") {
+            wallpaper.setAction("open", i18nd("plasma_wallpaper_org.sparky.image", "Open Wallpaper Image"), "document-open");
+            wallpaper.setAction("next", i18nd("plasma_wallpaper_org.sparky.image", "Next Wallpaper Image"), "user-desktop");
         }
     }
 
-    Wallpaper.Image {
+    Wallpaper.ImageBackend {
         id: imageWallpaper
+
+        // Not using wallpaper.configuration.Image to avoid binding loop warnings
+        configMap: wallpaper.configuration
+        usedInConfig: false
         //the oneliner of difference between image and slideshow wallpapers
-        renderingMode: (wallpaper.pluginName == "org.sparky.image") ? Wallpaper.Image.SingleImage : Wallpaper.Image.SlideShow
-//         targetSize: "1920x1080"
-        width: root.width
-        height: root.height
+        renderingMode: (wallpaper.pluginName === "org.sparky.image") ? Wallpaper.ImageBackend.SingleImage : Wallpaper.ImageBackend.SlideShow
+        targetSize: root.sourceSize
         slidePaths: wallpaper.configuration.SlidePaths
         slideTimer: wallpaper.configuration.SlideInterval
-    }
+        slideshowMode: wallpaper.configuration.SlideshowMode
+        slideshowFoldersFirst: wallpaper.configuration.SlideshowFoldersFirst
+        uncheckedSlides: wallpaper.configuration.UncheckedSlides
 
-    onFillModeChanged: {
-        fadeFillMode();
-    }
-    onConfiguredImageChanged: {
-        imageWallpaper.addUrl(configuredImage)
-    }
-    onModelImageChanged: {
-        fadeWallpaper();
-    }
-
-    SequentialAnimation {
-        id: fadeAnim
-        running: false
-
-        ParallelAnimation {
-                OpacityAnimator {
-                    target: currentImage
-                    from: 0
-                    to: 1
-                    duration: units.longDuration
-                }
-                OpacityAnimator {
-                    target: otherImage
-                    from: 1
-                    to: 0
-                    duration: units.longDuration
-                }
+        // Invoked from C++
+        function writeImageConfig(newImage: string) {
+            configMap.Image = newImage;
         }
-        ScriptAction {
-            script: {
-                otherImage.fillMode = fillMode;
-                otherImage.source = "";
-            }
-        }
-    }
-
-    Rectangle {
-        id: backgroundColor
-        anchors.fill: parent
-
-        visible: ready && (currentImage.status === Image.Ready || otherImage.status === Image.Ready) &&
-                 (currentImage.fillMode === Image.PreserveAspectFit || currentImage.fillMode === Image.Pad
-                 || otherImage.fillMode === Image.PreserveAspectFit || otherImage.fillMode === Image.Pad)
-        color: wallpaper.configuration.Color
-        Behavior on color {
-            ColorAnimation { duration: units.longDuration }
-        }
-    }
-
-    Image {
-        id: imageA
-        anchors.fill: parent
-        asynchronous: true
-        cache: false
-        fillMode: wallpaper.configuration.FillMode
-    }
-    Image {
-        id: imageB
-        anchors.fill: parent
-        asynchronous: true
-        cache: false
-        fillMode: wallpaper.configuration.FillMode
     }
 }
